@@ -24,6 +24,11 @@
     <style>
         body { font-family: 'Sarabun', sans-serif; background-color: #f3f4f6; }
         .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
+        /* Modal Animation */
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .modal-backdrop { animation: fadeIn 0.2s ease-out; }
+        .modal-content { animation: slideIn 0.3s ease-out; }
     </style>
 </head>
 <body>
@@ -37,6 +42,7 @@
             const [loading, setLoading] = useState(true);
             const [searchTerm, setSearchTerm] = useState("");
             const [deptFilter, setDeptFilter] = useState("all");
+            const [selectedProject, setSelectedProject] = useState(null); // State สำหรับ Modal
 
             // โหลดข้อมูลจากไฟล์ JSON
             useEffect(() => {
@@ -46,28 +52,18 @@
                         return response.json();
                     })
                     .then(jsonData => {
-                        // กรองข้อมูลที่เป็น null และสร้าง File Path อัตโนมัติ
                         const validData = jsonData
                             .filter(item => item && (item.project_name || item.project_id))
                             .map(item => {
-                                // จัดการ ID: แปลงเป็น String และตัด .0 ทิ้ง (เช่น "1234.0" -> "1234") เพื่อให้ตรงกับชื่อโฟลเดอร์
                                 const cleanId = item.project_id ? String(item.project_id).split('.')[0] : "";
                                 
-                                // ตรวจสอบว่ามี path ไฟล์หรือไม่ ถ้าไม่มีให้ลองสร้าง default path
-                                let filePath = item.file_path;
-                                let hasFile = item.has_file;
-
-                                if (!filePath && cleanId) {
-                                    // สมมติ Path มาตรฐานตามโครงสร้าง Folder: egp_downloads/<ID>/1_ประกาศ...
-                                    filePath = `egp_downloads/${cleanId}/1_ประกาศรายชื่อผู้ชนะการเสนอราคา.pdf`;
-                                    hasFile = true; // บังคับให้ปุ่มทำงาน
-                                }
+                                // ตรวจสอบว่ามีข้อมูล documents หรือไม่ เพื่อเปิดปุ่ม
+                                const hasDocuments = item.documents && item.documents.length > 0;
 
                                 return {
                                     ...item,
                                     project_id: cleanId,
-                                    file_path: filePath,
-                                    has_file: hasFile
+                                    has_file: hasDocuments // ใช้ document list เป็นตัวเช็คว่ามีไฟล์ไหม
                                 };
                             });
 
@@ -83,11 +79,9 @@
             // กรองข้อมูล
             const filteredData = useMemo(() => {
                 return data.filter(item => {
-                    // ป้องกัน Error โดยการแปลงเป็น String และเช็คค่าว่างก่อน .toLowerCase()
                     const projectName = item.project_name ? String(item.project_name).toLowerCase() : "";
                     const projectId = item.project_id ? String(item.project_id).toLowerCase() : "";
                     const deptName = item.dept_name ? String(item.dept_name).toLowerCase() : "";
-                    
                     const term = searchTerm.toLowerCase();
 
                     const matchesSearch = 
@@ -101,15 +95,34 @@
                 });
             }, [data, searchTerm, deptFilter]);
 
-            // รายชื่อหน่วยงานสำหรับ Dropdown
+            // รายชื่อหน่วยงาน
             const departments = useMemo(() => {
-                // กรองเฉพาะที่มีชื่อหน่วยงานและไม่ซ้ำ
                 return [...new Set(data.map(item => item.dept_name).filter(name => name))].sort();
             }, [data]);
 
-            // ฟังก์ชันสำหรับ Export CSV (สร้าง Report จากข้อมูลหน้าจอ)
+            // Helper: สร้างรายการไฟล์จาก text ใน json
+            const getProjectFiles = (project) => {
+                if (!project || !project.documents) return [];
+                
+                // แยกรายการด้วย comma
+                return project.documents.split(',').map((docRaw, index) => {
+                    let name = docRaw.trim();
+                    // ลบวงเล็บท้ายชื่อไฟล์ เช่น "(Printed to PDF)" ออกเพื่อเอาไปทำชื่อไฟล์
+                    const cleanName = name.replace(/\s*\(.*?\)$/, '');
+                    
+                    // สร้าง URL: egp_downloads/<ID>/<Index>_<Name>.pdf
+                    // สมมติว่าไฟล์เรียงตามลำดับ 1_, 2_, 3_ ในโฟลเดอร์
+                    return {
+                        displayName: name,
+                        fileName: `${index + 1}_${cleanName}.pdf`,
+                        url: `egp_downloads/${project.project_id}/${index + 1}_${cleanName}.pdf`
+                    };
+                });
+            };
+
+            // Export CSV
             const downloadCSV = () => {
-                const headers = ["รหัสโครงการ", "ชื่อโครงการ", "หน่วยงาน", "วันที่ประกาศ", "ราคากลาง", "งบประมาณ", "ผู้ชนะ", "ลิงก์เอกสาร"];
+                const headers = ["รหัสโครงการ", "ชื่อโครงการ", "หน่วยงาน", "วันที่ประกาศ", "ราคากลาง", "งบประมาณ", "ผู้ชนะ", "รายการเอกสาร"];
                 const csvRows = filteredData.map(item => {
                     const row = [
                         `"${item.project_id}"`,
@@ -119,7 +132,7 @@
                         `"${item.median_price || ""}"`,
                         `"${item.budget || ""}"`,
                         `"${(item.winner || "").replace(/"/g, '""')}"`,
-                        `"${item.file_path || "ไม่มีไฟล์"}"`
+                        `"${(item.documents || "ไม่มีเอกสาร").replace(/"/g, '""')}"`
                     ];
                     return row.join(",");
                 });
@@ -197,7 +210,7 @@
                                     </div>
                                 </div>
 
-                                {/* Export CSV Button (Filtered Data) */}
+                                {/* Export CSV Button */}
                                 <div className="md:col-span-2">
                                     <button
                                         onClick={downloadCSV}
@@ -208,7 +221,7 @@
                                     </button>
                                 </div>
 
-                                {/* Download Full Report Button (Static File) */}
+                                {/* Download Full Report Button */}
                                 <div className="md:col-span-2">
                                     <a
                                         href="full_report.xlsx" 
@@ -290,15 +303,14 @@
                                             )}
                                         </div>
                                         
-                                        {item.has_file && item.file_path ? (
-                                            <a 
-                                                href={item.file_path} 
-                                                target="_blank" 
+                                        {item.has_file ? (
+                                            <button 
+                                                onClick={() => setSelectedProject(item)}
                                                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
                                             >
-                                                <i className="fa-solid fa-file-pdf mr-2"></i>
-                                                ดูไฟล์
-                                            </a>
+                                                <i className="fa-solid fa-folder-open mr-2"></i>
+                                                ดูเอกสาร
+                                            </button>
                                         ) : (
                                             <button disabled className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-400 bg-gray-100 cursor-not-allowed">
                                                 <i className="fa-solid fa-ban mr-2"></i>
@@ -310,6 +322,65 @@
                             ))}
                         </div>
                     </main>
+
+                    {/* Modal Popup */}
+                    {selectedProject && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900 bg-opacity-60 backdrop-blur-sm modal-backdrop" onClick={() => setSelectedProject(null)}>
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden modal-content" onClick={e => e.stopPropagation()}>
+                                <div className="p-6 border-b border-gray-100 flex justify-between items-start bg-gray-50">
+                                    <div>
+                                        <div className="text-xs font-bold text-blue-600 uppercase tracking-wide mb-1">เอกสารแนบโครงการ</div>
+                                        <h3 className="text-lg font-semibold text-gray-900 leading-snug pr-4">{selectedProject.project_name}</h3>
+                                        <div className="text-sm text-gray-500 mt-1">รหัสโครงการ: {selectedProject.project_id}</div>
+                                    </div>
+                                    <button onClick={() => setSelectedProject(null)} className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-full hover:bg-gray-200">
+                                        <i className="fa-solid fa-xmark text-2xl"></i>
+                                    </button>
+                                </div>
+                                <div className="p-6 max-h-[60vh] overflow-y-auto">
+                                    {getProjectFiles(selectedProject).length > 0 ? (
+                                        <div className="space-y-3">
+                                            {getProjectFiles(selectedProject).map((file, idx) => (
+                                                <a 
+                                                    key={idx} 
+                                                    href={file.url} 
+                                                    target="_blank"
+                                                    className="flex items-center p-4 border border-gray-200 rounded-xl hover:bg-blue-50 hover:border-blue-300 transition-all group relative overflow-hidden"
+                                                >
+                                                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                                    <div className="bg-red-100 text-red-600 w-12 h-12 rounded-lg flex-shrink-0 flex items-center justify-center mr-4 group-hover:scale-110 transition-transform">
+                                                        <i className="fa-solid fa-file-pdf text-xl"></i>
+                                                    </div>
+                                                    <div className="flex-grow min-w-0">
+                                                        <div className="font-medium text-gray-800 group-hover:text-blue-700 truncate">{file.displayName}</div>
+                                                        <div className="text-xs text-gray-500 mt-0.5 group-hover:text-blue-600/70">{file.fileName}</div>
+                                                    </div>
+                                                    <div className="ml-4 text-gray-300 group-hover:text-blue-600 transition-colors">
+                                                        <i className="fa-solid fa-cloud-arrow-down text-xl"></i>
+                                                    </div>
+                                                </a>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-12 text-gray-400">
+                                            <div className="bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3">
+                                                <i className="fa-regular fa-folder-open text-3xl"></i>
+                                            </div>
+                                            <p>ไม่พบรายการเอกสารในระบบ</p>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="bg-gray-50 px-6 py-4 border-t border-gray-100 flex justify-end">
+                                    <button 
+                                        onClick={() => setSelectedProject(null)}
+                                        className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-200"
+                                    >
+                                        ปิดหน้าต่าง
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Footer */}
                     <footer className="bg-white border-t border-gray-200 py-6 mt-auto">
