@@ -46,8 +46,31 @@
                         return response.json();
                     })
                     .then(jsonData => {
-                        // กรองข้อมูลที่เป็น null ทั้งหมดออกก่อนเพื่อความปลอดภัย
-                        const validData = jsonData.filter(item => item && (item.project_name || item.project_id));
+                        // กรองข้อมูลที่เป็น null และสร้าง File Path อัตโนมัติ
+                        const validData = jsonData
+                            .filter(item => item && (item.project_name || item.project_id))
+                            .map(item => {
+                                // จัดการ ID: แปลงเป็น String และตัด .0 ทิ้ง (เช่น "1234.0" -> "1234") เพื่อให้ตรงกับชื่อโฟลเดอร์
+                                const cleanId = item.project_id ? String(item.project_id).split('.')[0] : "";
+                                
+                                // ตรวจสอบว่ามี path ไฟล์หรือไม่ ถ้าไม่มีให้ลองสร้าง default path
+                                let filePath = item.file_path;
+                                let hasFile = item.has_file;
+
+                                if (!filePath && cleanId) {
+                                    // สมมติ Path มาตรฐานตามโครงสร้าง Folder: egp_downloads/<ID>/1_ประกาศ...
+                                    filePath = `egp_downloads/${cleanId}/1_ประกาศรายชื่อผู้ชนะการเสนอราคา.pdf`;
+                                    hasFile = true; // บังคับให้ปุ่มทำงาน
+                                }
+
+                                return {
+                                    ...item,
+                                    project_id: cleanId,
+                                    file_path: filePath,
+                                    has_file: hasFile
+                                };
+                            });
+
                         setData(validData);
                         setLoading(false);
                     })
@@ -62,7 +85,7 @@
                 return data.filter(item => {
                     // ป้องกัน Error โดยการแปลงเป็น String และเช็คค่าว่างก่อน .toLowerCase()
                     const projectName = item.project_name ? String(item.project_name).toLowerCase() : "";
-                    const projectId = item.project_id ? String(item.project_id).toLowerCase() : ""; // project_id อาจเป็นตัวเลข
+                    const projectId = item.project_id ? String(item.project_id).toLowerCase() : "";
                     const deptName = item.dept_name ? String(item.dept_name).toLowerCase() : "";
                     
                     const term = searchTerm.toLowerCase();
