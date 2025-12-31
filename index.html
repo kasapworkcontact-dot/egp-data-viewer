@@ -107,6 +107,33 @@
                 return [...new Set(data.map(item => item.dept_name).filter(name => name))].sort();
             }, [data]);
 
+            // ฟังก์ชันสำหรับ Export CSV (สร้าง Report จากข้อมูลหน้าจอ)
+            const downloadCSV = () => {
+                const headers = ["รหัสโครงการ", "ชื่อโครงการ", "หน่วยงาน", "วันที่ประกาศ", "ราคากลาง", "งบประมาณ", "ผู้ชนะ", "ลิงก์เอกสาร"];
+                const csvRows = filteredData.map(item => {
+                    const row = [
+                        `"${item.project_id}"`,
+                        `"${(item.project_name || "").replace(/"/g, '""')}"`,
+                        `"${(item.dept_name || "").replace(/"/g, '""')}"`,
+                        `"${item.announce_date || ""}"`,
+                        `"${item.median_price || ""}"`,
+                        `"${item.budget || ""}"`,
+                        `"${(item.winner || "").replace(/"/g, '""')}"`,
+                        `"${item.file_path || "ไม่มีไฟล์"}"`
+                    ];
+                    return row.join(",");
+                });
+                const csvContent = "\uFEFF" + [headers.join(","), ...csvRows].join("\n");
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.setAttribute("href", url);
+                link.setAttribute("download", "report_egp_filtered.csv");
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
             return (
                 <div className="min-h-screen flex flex-col">
                     {/* Navbar */}
@@ -134,19 +161,22 @@
                         {/* Search & Filter Section */}
                         <div className="bg-white rounded-xl shadow-sm p-6 mb-8 border border-gray-100">
                             <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                                <div className="md:col-span-8 relative">
+                                {/* Search Box */}
+                                <div className="md:col-span-5 relative">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                         <i className="fa-solid fa-search text-gray-400"></i>
                                     </div>
                                     <input
                                         type="text"
                                         className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg leading-5 bg-gray-50 placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition duration-150 ease-in-out"
-                                        placeholder="ค้นหาชื่อโครงการ, เลขที่โครงการ, หรือหน่วยงาน..."
+                                        placeholder="ค้นหาชื่อโครงการ, เลขที่โครงการ..."
                                         value={searchTerm}
                                         onChange={(e) => setSearchTerm(e.target.value)}
                                     />
                                 </div>
-                                <div className="md:col-span-4">
+                                
+                                {/* Filter Dropdown */}
+                                <div className="md:col-span-3">
                                     <div className="relative">
                                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                             <i className="fa-solid fa-building text-gray-400"></i>
@@ -165,6 +195,29 @@
                                             <i className="fa-solid fa-chevron-down text-xs"></i>
                                         </div>
                                     </div>
+                                </div>
+
+                                {/* Export CSV Button (Filtered Data) */}
+                                <div className="md:col-span-2">
+                                    <button
+                                        onClick={downloadCSV}
+                                        className="w-full h-full flex items-center justify-center px-3 py-3 border border-transparent text-sm font-medium rounded-lg text-green-700 bg-green-100 hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 shadow-sm transition-colors"
+                                    >
+                                        <i className="fa-solid fa-file-csv mr-2"></i>
+                                        Export CSV
+                                    </button>
+                                </div>
+
+                                {/* Download Full Report Button (Static File) */}
+                                <div className="md:col-span-2">
+                                    <a
+                                        href="full_report.xlsx" 
+                                        download
+                                        className="w-full h-full flex items-center justify-center px-3 py-3 border border-transparent text-sm font-medium rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 shadow-sm transition-colors"
+                                    >
+                                        <i className="fa-solid fa-file-excel mr-2"></i>
+                                        โหลดไฟล์เต็ม
+                                    </a>
                                 </div>
                             </div>
                         </div>
